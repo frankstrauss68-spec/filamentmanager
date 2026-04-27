@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Lagerorte — FilamentManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-geo-alt me-2"></i>Lagerorte</h4>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#locModal" onclick="openModal()">
+    <i class="bi bi-plus-lg me-1"></i>Neuer Lagerort
+  </button>
+</div>
+
+<div id="loc-error" class="alert alert-danger d-none"></div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Name</th>
+          <th>Typ</th>
+          <th>Beschreibung</th>
+          <th class="text-center">Spulen</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="loc-table">
+        {% for loc, count in locations %}
+        <tr id="loc-row-{{ loc.id }}">
+          <td class="fw-semibold">{{ loc.name }}</td>
+          <td>
+            {% if loc.type == 'shelf' %}<span class="badge bg-info text-dark">Regal</span>
+            {% elif loc.type == 'box' %}<span class="badge bg-warning text-dark">Box</span>
+            {% else %}<span class="badge bg-success">Drucker</span>{% endif %}
+          </td>
+          <td class="text-muted small">{{ loc.description or '—' }}</td>
+          <td class="text-center">{{ count }}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-secondary me-1"
+                    onclick="openModal({{ loc.id }}, '{{ loc.name|e }}', '{{ loc.type }}', '{{ (loc.description or '')|e }}')">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteLocation({{ loc.id }}, {{ count }})"
+                    {% if count > 0 %}disabled title="Zuerst Spulen umlagern"{% endif %}>
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr id="empty-row"><td colspan="5" class="text-center text-muted py-4">Noch keine Lagerorte angelegt.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Modal #}
+<div class="modal fade" id="locModal" tabindex="-1" aria-labelledby="locModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="locModalLabel">Lagerort</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="modal-error" class="alert alert-danger d-none py-2 small"></div>
+        <input type="hidden" id="modal-id">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+          <input type="text" id="modal-name" class="form-control" placeholder="z.B. Regal A">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Typ</label>
+          <select id="modal-type" class="form-select">
+            <option value="shelf">Regal</option>
+            <option value="box">Box</option>
+            <option value="printer">Drucker</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Beschreibung</label>
+          <input type="text" id="modal-desc" class="form-control" placeholder="Optional">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-primary" onclick="saveLocation()">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TYPE_LABELS = {shelf: 'Regal', box: 'Box', printer: 'Drucker'};
+const TYPE_BADGES = {shelf: 'info text-dark', box: 'warning text-dark', printer: 'success'};
+
+function openModal(id, name, type, desc) {
+  document.getElementById('modal-id').value = id || '';
+  document.getElementById('modal-name').value = name || '';
+  document.getElementById('modal-type').value = type || 'shelf';
+  document.getElementById('modal-desc').value = desc || '';
+  document.getElementById('modal-error').classList.add('d-none');
+  document.getElementById('locModalLabel').textContent = id ? 'Lagerort bearbeiten' : 'Neuer Lagerort';
+  new bootstrap.Modal(document.getElementById('locModal')).show();
+}
+
+async function saveLocation() {
+  const id = document.getElementById('modal-id').value;
+  const name = document.getElementById('modal-name').value.trim();
+  const type = document.getElementById('modal-type').value;
+  const desc = document.getElementById('modal-desc').value.trim();
+  const errEl = document.getElementById('modal-error');
+  errEl.classList.add('d-none');
+
+  const url = id ? `/locations/${id}/edit` : '/locations/new';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, type, description: desc})
+  });
+  const data = await res.json();
+
+  if (!res.ok) { errEl.textContent = data.error; errEl.classList.remove('d-none'); return; }
+
+  bootstrap.Modal.getInstance(document.getElementById('locModal')).hide();
+
+  const empty = document.getElementById('empty-row');
+  if (empty) empty.remove();
+
+  if (id) {
+    const row = document.getElementById(`loc-row-${id}`);
+    row.cells[0].textContent = data.name;
+    row.cells[0].className = 'fw-semibold';
+    row.cells[1].innerHTML = `<span class="badge bg-${TYPE_BADGES[data.type]}">${TYPE_LABELS[data.type]}</span>`;
+    row.cells[2].textContent = data.description || '—';
+  } else {
+    const tb = document.getElementById('loc-table');
+    const tr = document.createElement('tr');
+    tr.id = `loc-row-${data.id}`;
+    tr.innerHTML = `
+      <td class="fw-semibold">${data.name}</td>
+      <td><span class="badge bg-${TYPE_BADGES[data.type]}">${TYPE_LABELS[data.type]}</span></td>
+      <td class="text-muted small">${data.description || '—'}</td>
+      <td class="text-center">0</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-secondary me-1"
+                onclick="openModal(${data.id}, '${data.name.replace(/'/g,"\\'")}', '${data.type}', '${(data.description||'').replace(/'/g,"\\'")}')">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteLocation(${data.id}, 0)">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function deleteLocation(id, count) {
+  if (count > 0) { alert('Bitte zuerst alle Spulen umlagern.'); return; }
+  if (!confirm('Lagerort wirklich löschen?')) return;
+
+  const res = await fetch(`/locations/${id}/delete`, {method: 'POST'});
+  const data = await res.json();
+
+  if (!res.ok) { document.getElementById('loc-error').textContent = data.error; document.getElementById('loc-error').classList.remove('d-none'); return; }
+
+  document.getElementById(`loc-row-${id}`).remove();
+  if (!document.querySelector('#loc-table tr')) {
+    const tr = document.createElement('tr');
+    tr.id = 'empty-row';
+    tr.innerHTML = '<td colspan="5" class="text-center text-muted py-4">Noch keine Lagerorte angelegt.</td>';
+    document.getElementById('loc-table').appendChild(tr);
+  }
+}
+</script>
+{% endblock %}

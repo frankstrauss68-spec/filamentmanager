@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% set editing = spool is defined and spool.id is defined %}
+{% block title %}{% if editing %}Spule bearbeiten{% else %}Neue Spule{% endif %} — FilamentManager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 col-lg-6">
+    <h4 class="mb-4">
+      <i class="bi bi-{% if editing %}pencil{% else %}plus-circle{% endif %} me-2"></i>
+      {% if editing %}{{ spool.manufacturer }} {{ spool.color }} bearbeiten{% else %}Neue Spule anlegen{% endif %}
+    </h4>
+
+    <form method="post" enctype="multipart/form-data" novalidate>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Hersteller <span class="text-danger">*</span></label>
+        <input type="text" name="manufacturer" class="form-control"
+               value="{{ form.manufacturer or '' }}" required placeholder="z.B. Prusament, eSUN">
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label fw-semibold">Material <span class="text-danger">*</span></label>
+          <select name="material" class="form-select" required>
+            {% for m in materials %}
+              <option value="{{ m }}" {% if (form.material or '') == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label fw-semibold">Lagerort</label>
+          <select name="location_id" class="form-select">
+            <option value="">— Kein Lagerort —</option>
+            {% for loc in locations %}
+              <option value="{{ loc.id }}"
+                {% if (form.location_id|string if form.location_id else '') == loc.id|string %}selected{% endif %}>
+                {{ loc.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-sm-8">
+          <label class="form-label fw-semibold">Farbe (Name) <span class="text-danger">*</span></label>
+          <input type="text" name="color" class="form-control"
+                 value="{{ form.color or '' }}" required placeholder="z.B. Ice Blue">
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label fw-semibold">Farbe (Hex)</label>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="color" name="color_hex" id="colorHex" class="form-control form-control-color"
+                   value="{{ form.color_hex or '#cccccc' }}" title="Farbe wählen">
+            <span id="colorHexPreview" class="color-swatch-lg"
+                  style="background-color: {{ form.color_hex or '#cccccc' }};"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6">
+          <label class="form-label fw-semibold">Gesamtgewicht (g) <span class="text-danger">*</span></label>
+          <input type="number" name="total_weight_g" class="form-control"
+                 value="{{ form.total_weight_g or 1000 }}" min="1" required>
+        </div>
+        {% if editing %}
+        <div class="col-sm-6">
+          <label class="form-label fw-semibold">Restmenge (g)</label>
+          <input type="number" name="remaining_g" class="form-control"
+                 value="{{ form.remaining_g or 0 }}" min="0">
+          <div class="form-text">Wird normalerweise über das Verbrauchsprotokoll aktualisiert.</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Notizen</label>
+        <textarea name="notes" class="form-control" rows="3"
+                  placeholder="z.B. Drucktemperatur 210°C, Bett 60°C">{{ form.notes or '' }}</textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Foto</label>
+        {% if editing and spool.photo_filename %}
+          <div class="mb-2">
+            <img src="{{ url_for('static', filename='uploads/' + spool.photo_filename) }}"
+                 class="img-thumbnail" style="max-height: 120px;" alt="Aktuelles Foto">
+            <div class="form-text">Neues Foto hochladen um das alte zu ersetzen.</div>
+          </div>
+        {% endif %}
+        <input type="file" name="photo" class="form-control" accept="image/*">
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1">
+          <i class="bi bi-floppy me-1"></i>Spule speichern
+        </button>
+        <a href="{{ url_for('spools.spool_detail', spool_id=spool.id) if editing else url_for('spools.index') }}"
+           class="btn btn-outline-secondary">Abbrechen</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('colorHex').addEventListener('input', function() {
+    document.getElementById('colorHexPreview').style.backgroundColor = this.value;
+  });
+</script>
+{% endblock %}

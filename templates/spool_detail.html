@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}{{ spool.manufacturer }} {{ spool.color }} — FilamentManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <a href="{{ url_for('spools.index') }}" class="btn btn-sm btn-outline-secondary mb-2">
+      <i class="bi bi-arrow-left me-1"></i>Zurück
+    </a>
+    <h4 class="mb-0">{{ spool.manufacturer }} <span class="text-muted">{{ spool.material }}</span></h4>
+    <p class="mb-0 fs-5">{{ spool.color }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('spools.edit_spool', spool_id=spool.id) }}" class="btn btn-outline-secondary">
+      <i class="bi bi-pencil me-1"></i>Bearbeiten
+    </a>
+    <form method="post" action="{{ url_for('spools.delete_spool', spool_id=spool.id) }}"
+          onsubmit="return confirm('Spule wirklich löschen?')">
+      <button type="submit" class="btn btn-outline-danger">
+        <i class="bi bi-trash me-1"></i>Löschen
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# Linke Spalte: Foto + QR #}
+  <div class="col-md-4">
+    {% if spool.photo_filename %}
+      <img src="{{ url_for('static', filename='uploads/' + spool.photo_filename) }}"
+           class="img-fluid rounded shadow-sm mb-3" alt="{{ spool.color }}">
+    {% else %}
+      <div class="spool-photo-placeholder-lg d-flex align-items-center justify-content-center text-muted rounded mb-3">
+        <i class="bi bi-image fs-1"></i>
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-body text-center">
+        <img src="{{ url_for('spools.qr_image', spool_id=spool.id) }}"
+             class="img-fluid mb-2" style="max-width: 180px;" alt="QR-Code">
+        <div>
+          <a href="{{ url_for('spools.qr_label', spool_id=spool.id) }}" target="_blank"
+             class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-printer me-1"></i>QR-Etikett drucken
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Mittlere Spalte: Info #}
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header fw-semibold"><i class="bi bi-info-circle me-2"></i>Details</div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-3">
+          <tr><th class="text-muted" style="width:45%">Hersteller</th><td>{{ spool.manufacturer }}</td></tr>
+          <tr><th class="text-muted">Material</th><td><span class="badge bg-primary">{{ spool.material }}</span></td></tr>
+          <tr>
+            <th class="text-muted">Farbe</th>
+            <td class="d-flex align-items-center gap-2">
+              <span class="color-swatch" style="background-color: {{ spool.color_hex or '#ccc' }};"></span>
+              {{ spool.color }}
+            </td>
+          </tr>
+          <tr><th class="text-muted">Lagerort</th>
+            <td>
+              {% if spool.location %}{{ spool.location.name }}
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+          </tr>
+          <tr><th class="text-muted">Angelegt</th><td>{{ spool.created_at.strftime('%d.%m.%Y') }}</td></tr>
+        </table>
+
+        {% if spool.notes %}
+          <p class="text-muted small mb-3"><i class="bi bi-chat-text me-1"></i>{{ spool.notes }}</p>
+        {% endif %}
+
+        <div>
+          <div class="d-flex justify-content-between mb-1">
+            <span class="fw-semibold">Restmenge</span>
+            <span id="remaining-text">{{ spool.remaining_g }}g / {{ spool.total_weight_g }}g</span>
+          </div>
+          <div class="progress mb-1" style="height: 14px;">
+            <div id="remaining-bar" class="progress-bar bg-{{ spool.progress_color }}"
+                 style="width: {{ spool.remaining_percent }}%"></div>
+          </div>
+          <div class="text-end text-muted small">
+            <span id="remaining-pct">{{ spool.remaining_percent }}</span>%
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Rechte Spalte: Verbrauch loggen #}
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-header fw-semibold"><i class="bi bi-plus-circle me-2"></i>Verbrauch eintragen</div>
+      <div class="card-body">
+        <div id="usage-error" class="alert alert-danger d-none py-2 small"></div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Verbrauchte Gramm</label>
+          <input type="number" id="used-g" class="form-control form-control-sm" min="1"
+                 placeholder="z.B. 50">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small mb-1">Notiz (optional)</label>
+          <input type="text" id="usage-note" class="form-control form-control-sm"
+                 placeholder="z.B. Benchy-Druck">
+        </div>
+        <button id="log-btn" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-check2 me-1"></i>Eintragen
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock-history me-2"></i>Protokoll</span>
+        <span class="badge bg-secondary">{{ logs|length }}</span>
+      </div>
+      <div class="card-body p-0">
+        <ul id="log-list" class="list-group list-group-flush">
+          {% for log in logs %}
+          <li class="list-group-item d-flex justify-content-between align-items-start py-2 px-3"
+              id="log-{{ log.id }}">
+            <div>
+              <div class="fw-semibold small">{{ log.used_g }}g</div>
+              <div class="text-muted" style="font-size:0.75rem">
+                {{ log.logged_at.strftime('%d.%m.%Y %H:%M') }}
+                {% if log.note %}<br>{{ log.note }}{% endif %}
+              </div>
+            </div>
+            <button class="btn btn-sm btn-link text-danger p-0 ms-2 delete-log-btn"
+                    data-log-id="{{ log.id }}">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </li>
+          {% else %}
+          <li class="list-group-item text-muted small text-center py-3" id="empty-log">
+            Noch kein Verbrauch eingetragen.
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SPOOL_ID = {{ spool.id }};
+const TOTAL_G = {{ spool.total_weight_g }};
+
+function updateProgressUI(remaining_g, remaining_percent) {
+  document.getElementById('remaining-text').textContent = `${remaining_g}g / ${TOTAL_G}g`;
+  document.getElementById('remaining-pct').textContent = remaining_percent;
+  const bar = document.getElementById('remaining-bar');
+  bar.style.width = remaining_percent + '%';
+  bar.className = 'progress-bar bg-' + (remaining_percent > 50 ? 'success' : remaining_percent > 20 ? 'warning' : 'danger');
+}
+
+document.getElementById('log-btn').addEventListener('click', async () => {
+  const usedG = parseInt(document.getElementById('used-g').value);
+  const note = document.getElementById('usage-note').value.trim();
+  const errEl = document.getElementById('usage-error');
+  errEl.classList.add('d-none');
+
+  if (!usedG || usedG <= 0) { errEl.textContent = 'Bitte Gramm eingeben.'; errEl.classList.remove('d-none'); return; }
+
+  const res = await fetch('/usage/log', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({spool_id: SPOOL_ID, used_g: usedG, note})
+  });
+  const data = await res.json();
+
+  if (!res.ok) { errEl.textContent = data.error; errEl.classList.remove('d-none'); return; }
+
+  updateProgressUI(data.remaining_g, data.remaining_percent);
+  document.getElementById('used-g').value = '';
+  document.getElementById('usage-note').value = '';
+
+  const empty = document.getElementById('empty-log');
+  if (empty) empty.remove();
+
+  const li = document.createElement('li');
+  li.className = 'list-group-item d-flex justify-content-between align-items-start py-2 px-3';
+  li.id = `log-${data.log_id}`;
+  li.innerHTML = `
+    <div>
+      <div class="fw-semibold small">${data.used_g}g</div>
+      <div class="text-muted" style="font-size:0.75rem">${data.logged_at}${data.note ? '<br>' + data.note : ''}</div>
+    </div>
+    <button class="btn btn-sm btn-link text-danger p-0 ms-2 delete-log-btn" data-log-id="${data.log_id}">
+      <i class="bi bi-x-lg"></i>
+    </button>`;
+  document.getElementById('log-list').prepend(li);
+});
+
+document.getElementById('log-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.delete-log-btn');
+  if (!btn) return;
+  if (!confirm('Eintrag löschen?')) return;
+  const logId = btn.dataset.logId;
+
+  const res = await fetch(`/usage/${logId}/delete`, {method: 'POST'});
+  const data = await res.json();
+  if (!res.ok) { alert(data.error); return; }
+
+  document.getElementById(`log-${logId}`).remove();
+  updateProgressUI(data.remaining_g, data.remaining_percent);
+
+  if (document.querySelectorAll('#log-list li').length === 0) {
+    const li = document.createElement('li');
+    li.id = 'empty-log';
+    li.className = 'list-group-item text-muted small text-center py-3';
+    li.textContent = 'Noch kein Verbrauch eingetragen.';
+    document.getElementById('log-list').appendChild(li);
+  }
+});
+</script>
+{% endblock %}
