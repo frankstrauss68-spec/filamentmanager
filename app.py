@@ -44,7 +44,12 @@ def create_app():
         return redirect(url_for("spools.index"))
 
     with app.app_context():
+        # Import PrintJob so SQLAlchemy includes it in create_all()
+        import monitor.models_extension  # noqa: F401
         db.create_all()
+
+    from monitor.prusalink import start_monitor
+    start_monitor(app)
 
     return app
 
