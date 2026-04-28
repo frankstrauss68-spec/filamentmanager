@@ -69,6 +69,18 @@ def delete_printer(printer_id):
     return redirect(url_for("printers.index"))
 
 
+@printers_bp.route("/<int:printer_id>/load-spool", methods=["POST"])
+def load_spool(printer_id):
+    printer = db.get_or_404(Printer, printer_id)
+    if printer.last_state in ("PRINTING", "PAUSED"):
+        flash(f'„{printer.name}" druckt gerade — Spule kann nicht gewechselt werden.', "warning")
+        return redirect(url_for("spools.index"))
+    spool_id = request.form.get("spool_id")
+    printer.spool_id = int(spool_id) if spool_id else None
+    db.session.commit()
+    return redirect(url_for("spools.index"))
+
+
 def _validate(form, printer_id=None):
     errors = []
     name = (form.get("name") or "").strip()

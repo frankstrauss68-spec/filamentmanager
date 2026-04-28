@@ -2,16 +2,7 @@
 {% block title %}Dashboard — FilamentManager{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0"><i class="bi bi-layers me-2"></i>Meine Spulen
-    <span class="badge bg-secondary ms-2">{{ spools|length }}</span>
-  </h4>
-  <a class="btn btn-primary" href="{{ url_for('spools.new_spool') }}">
-    <i class="bi bi-plus-lg me-1"></i>Neue Spule
-  </a>
-</div>
-
-{# ── Drucker-Status-Widgets ── #}
+{# ── Drucker-Status-Widgets (direkt unter Navbar) ── #}
 {% if printer_widgets %}
 <div class="row g-3 mb-4">
   {% for w in printer_widgets %}
@@ -22,9 +13,13 @@
         <i class="bi bi-printer fs-5"></i>
         <span class="fw-semibold text-truncate">{{ p.name }}</span>
         <span class="badge bg-{{ p.state_badge }} ms-auto">{{ p.state_label }}</span>
+        <a href="{{ url_for('printers.edit_printer', printer_id=p.id) }}"
+           class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" title="Drucker bearbeiten">
+          <i class="bi bi-pencil"></i>
+        </a>
       </div>
       <div class="card-body py-2">
-        {% if p.last_state == "PRINTING" or p.last_state == "PAUSED" %}
+        {% if p.last_state in ("PRINTING", "PAUSED") %}
           {% if p.last_filename %}
             <p class="mb-1 small text-truncate" title="{{ p.last_filename }}">
               <i class="bi bi-file-earmark me-1"></i>{{ p.last_filename }}
@@ -54,8 +49,17 @@
           {% endif %}
         {% elif p.last_state == "IDLE" %}
           <p class="mb-0 small text-muted"><i class="bi bi-check-circle me-1"></i>Bereit</p>
+          {% if p.spool %}
+            <div class="mt-1 small">
+              <span class="color-swatch me-1"
+                    style="background-color:{{ p.spool.color_hex or '#ccc' }};"></span>
+              {{ p.spool.manufacturer }} {{ p.spool.color }} — {{ p.spool.remaining_g }}g
+            </div>
+          {% endif %}
         {% elif p.last_state in ("ERROR", "STOPPED") %}
-          <p class="mb-0 small text-danger"><i class="bi bi-exclamation-triangle me-1"></i>{{ p.state_label }}</p>
+          <p class="mb-0 small text-danger">
+            <i class="bi bi-exclamation-triangle me-1"></i>{{ p.state_label }}
+          </p>
         {% else %}
           <p class="mb-0 small text-muted">Noch keine Verbindung.</p>
         {% endif %}
@@ -65,6 +69,15 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-layers me-2"></i>Meine Spulen
+    <span class="badge bg-secondary ms-2">{{ spools|length }}</span>
+  </h4>
+  <a class="btn btn-primary" href="{{ url_for('spools.new_spool') }}">
+    <i class="bi bi-plus-lg me-1"></i>Neue Spule
+  </a>
+</div>
 
 {% if replacement_of %}
 <div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-3">
@@ -193,7 +206,7 @@
         </div>
       </div>
 
-      <div class="card-footer d-flex gap-2 py-2">
+      <div class="card-footer d-flex gap-2 py-2 flex-wrap">
         <a class="btn btn-sm btn-outline-secondary flex-grow-1"
            href="{{ url_for('spools.edit_spool', spool_id=spool.id) }}">
           <i class="bi bi-pencil me-1"></i>Bearbeiten
@@ -202,6 +215,52 @@
            href="{{ url_for('spools.spool_detail', spool_id=spool.id) }}">
           <i class="bi bi-eye me-1"></i>Details
         </a>
+        {# ── In Drucker laden ── #}
+        {% if printer_widgets|length == 1 %}
+          {% set pw = printer_widgets[0] %}
+          {% set p = pw.printer %}
+          {% set busy = p.last_state in ("PRINTING", "PAUSED") %}
+          {% set loaded = p.spool_id == spool.id %}
+          <form method="post"
+                action="{{ url_for('printers.load_spool', printer_id=p.id) }}">
+            <input type="hidden" name="spool_id" value="{{ spool.id }}">
+            <button type="submit"
+                    class="btn btn-sm {% if loaded %}btn-success{% else %}btn-outline-success{% endif %}"
+                    {% if busy %}disabled title="{{ p.name }} druckt gerade"{% endif %}>
+              <i class="bi bi-{% if loaded %}check2-circle{% else %}box-arrow-in-right{% endif %}"></i>
+            </button>
+          </form>
+        {% elif printer_widgets|length > 1 %}
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-success dropdown-toggle"
+                    type="button" data-bs-toggle="dropdown"
+                    title="In Drucker laden">
+              <i class="bi bi-box-arrow-in-right"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              {% for pw in printer_widgets %}
+                {% set p = pw.printer %}
+                {% set busy = p.last_state in ("PRINTING", "PAUSED") %}
+                <li>
+                  <form method="post"
+                        action="{{ url_for('printers.load_spool', printer_id=p.id) }}">
+                    <input type="hidden" name="spool_id" value="{{ spool.id }}">
+                    <button type="submit"
+                            class="dropdown-item d-flex align-items-center gap-2
+                                   {% if busy %}disabled text-muted{% endif %}">
+                      <span>{{ p.name }}</span>
+                      {% if busy %}
+                        <span class="badge bg-primary ms-auto">druckt</span>
+                      {% elif p.spool_id == spool.id %}
+                        <i class="bi bi-check2 text-success ms-auto"></i>
+                      {% endif %}
+                    </button>
+                  </form>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
