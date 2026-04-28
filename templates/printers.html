@@ -35,7 +35,7 @@
                 <span class="color-swatch me-1"
                       style="background-color: {{ printer.spool.color_hex or '#ccc' }};"></span>
                 {{ printer.spool.manufacturer }} {{ printer.spool.color }}
-                <span class="badge bg-primary ms-1">{{ printer.spool.material }}</span>
+                <span class="badge bg-{{ printer.spool.material_color }} ms-1">{{ printer.spool.material }}</span>
               {% else %}
                 <span class="text-muted">— keine —</span>
               {% endif %}

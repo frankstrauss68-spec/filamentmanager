@@ -63,7 +63,7 @@
           <tr>
             <th class="text-muted">Material</th>
             <td>
-              <span class="badge bg-primary">{{ spool.material }}</span>
+              <span class="badge bg-{{ spool.material_color }}">{{ spool.material }}</span>
               {% if spool.variant %}
                 <span class="badge bg-secondary ms-1">
                   {% if 'HS' in spool.variant.upper() %}<i class="bi bi-lightning-fill me-1"></i>{% endif %}

@@ -4,6 +4,17 @@ from sqlalchemy import event
 
 db = SQLAlchemy()
 
+MATERIAL_COLORS = {
+    "PLA":    "success",
+    "PETG":   "primary",
+    "ABS":    "danger",
+    "ASA":    "warning",
+    "TPU":    "info",
+    "Nylon":  "purple",
+    "PC":     "dark",
+    "Other":  "secondary",
+}
+
 
 class Location(db.Model):
     __tablename__ = "locations"
@@ -42,6 +53,10 @@ class Spool(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     usage_logs = db.relationship("UsageLog", backref="spool", lazy=True, cascade="all, delete-orphan")
+
+    @property
+    def material_color(self):
+        return MATERIAL_COLORS.get(self.material, "secondary")
 
     @property
     def remaining_percent(self):

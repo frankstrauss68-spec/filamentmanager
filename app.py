@@ -31,6 +31,9 @@ def create_app():
 
     db.init_app(app)
 
+    from models import MATERIAL_COLORS
+    app.jinja_env.globals["MATERIAL_COLORS"] = MATERIAL_COLORS
+
     from routes.spools import spools_bp
     from routes.locations import locations_bp
     from routes.usage import usage_bp

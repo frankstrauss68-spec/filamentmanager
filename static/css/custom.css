@@ -46,3 +46,7 @@
   border-radius: 6px;
   overflow: hidden;
 }
+
+/* Material-Farben */
+.bg-purple { background-color: #6f42c1 !important; color: #fff !important; }
+.text-purple { color: #6f42c1 !important; }
