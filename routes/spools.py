@@ -128,6 +128,8 @@ def index():
             if count > 0:
                 replacements[spool.id] = count
 
+    all_spools = Spool.query.order_by(Spool.manufacturer, Spool.color).all()
+
     from models import Printer
     from monitor.models_extension import PrintJob
     printer_widgets = []
@@ -156,6 +158,7 @@ def index():
         replacement_of=replacement_of,
         replacements=replacements,
         printer_widgets=printer_widgets,
+        all_spools=all_spools,
     )
 
 

@@ -64,6 +64,43 @@
           <p class="mb-0 small text-muted">Noch keine Verbindung.</p>
         {% endif %}
       </div>
+      {# ── Spulen-Auswahl ── #}
+      {% set busy = p.last_state in ("PRINTING", "PAUSED") %}
+      <div class="card-footer py-2">
+        <label class="form-label small text-muted mb-1">Eingelegte Spule</label>
+        <form method="post"
+              action="{{ url_for('printers.load_spool', printer_id=p.id) }}"
+              class="d-flex gap-2">
+          <select name="spool_id" class="form-select form-select-sm"
+                  {% if busy %}disabled{% endif %}>
+            <option value="">— Keine Spule —</option>
+            {% for s in all_spools %}
+              <option value="{{ s.id }}"
+                {% if p.spool_id == s.id %}selected{% endif %}>
+                {{ s.manufacturer }} {{ s.color }}
+                ({{ s.material }}{% if s.variant %} {{ s.variant }}{% endif %})
+                — {{ s.remaining_g }}g
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm btn-success"
+                  {% if busy %}disabled{% endif %} title="Übernehmen">
+            <i class="bi bi-check2"></i>
+          </button>
+        </form>
+        {% if p.spool_id %}
+        <form method="post"
+              action="{{ url_for('printers.unload_spool', printer_id=p.id) }}"
+              class="mt-2">
+          <button type="submit"
+                  class="btn btn-sm btn-outline-warning w-100"
+                  {% if busy %}disabled{% endif %}
+                  onclick="return confirm('Spule entnehmen?')">
+            <i class="bi bi-box-arrow-left me-1"></i>Spule entnehmen
+          </button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </div>
   {% endfor %}
