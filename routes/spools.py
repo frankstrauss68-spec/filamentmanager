@@ -56,38 +56,90 @@ def delete_photo(filename):
 def index():
     material_filter = request.args.get("material", "")
     location_filter = request.args.get("location_id", "")
+    variant_filter = request.args.get("variant", "").strip()
     search = request.args.get("q", "").strip()
+    replacement_of = request.args.get("replacement_of", "").strip()
 
     query = Spool.query
 
-    if material_filter:
-        query = query.filter(Spool.material == material_filter)
-    if location_filter:
-        if location_filter == "none":
-            query = query.filter(Spool.location_id.is_(None))
-        else:
-            query = query.filter(Spool.location_id == int(location_filter))
-    if search:
-        like = f"%{search}%"
-        query = query.filter(
-            db.or_(
-                Spool.manufacturer.ilike(like),
-                Spool.color.ilike(like),
-                Spool.notes.ilike(like),
+    if replacement_of:
+        ref = db.session.get(Spool, int(replacement_of))
+        if ref:
+            query = query.filter(
+                Spool.manufacturer.ilike(ref.manufacturer),
+                Spool.material == ref.material,
+                Spool.color.ilike(ref.color),
+                db.func.lower(db.func.ifnull(Spool.variant, ""))
+                == (ref.variant or "").lower(),
+                Spool.opened == False,  # noqa: E712
+                Spool.id != ref.id,
             )
-        )
+    else:
+        if material_filter:
+            query = query.filter(Spool.material == material_filter)
+        if variant_filter:
+            query = query.filter(Spool.variant.ilike(variant_filter))
+        if location_filter:
+            if location_filter == "none":
+                query = query.filter(Spool.location_id.is_(None))
+            else:
+                query = query.filter(Spool.location_id == int(location_filter))
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Spool.manufacturer.ilike(like),
+                    Spool.color.ilike(like),
+                    Spool.notes.ilike(like),
+                )
+            )
 
     spools = query.order_by(Spool.manufacturer, Spool.color).all()
     locations = Location.query.order_by(Location.name).all()
+
+    # Collect distinct variants for filter dropdown
+    all_variants = sorted(
+        {s.variant for s in Spool.query.with_entities(Spool.variant).all() if s.variant},
+        key=str.lower,
+    )
+
+    # Build replacement count map: opened spool id → count of matching unopened spools
+    all_spools = spools if replacement_of else Spool.query.all()
+    unopened_index: dict[tuple, int] = {}
+    for s in Spool.query.filter_by(opened=False).all():
+        key = (
+            s.manufacturer.lower(),
+            s.material,
+            (s.color or "").lower(),
+            (s.variant or "").lower(),
+        )
+        unopened_index[key] = unopened_index.get(key, 0) + 1
+
+    replacements: dict[int, int] = {}
+    for spool in spools:
+        if spool.opened:
+            key = (
+                spool.manufacturer.lower(),
+                spool.material,
+                (spool.color or "").lower(),
+                (spool.variant or "").lower(),
+            )
+            count = unopened_index.get(key, 0)
+            if count > 0:
+                replacements[spool.id] = count
 
     return render_template(
         "index.html",
         spools=spools,
         locations=locations,
         materials=MATERIALS,
+        all_variants=all_variants,
         material_filter=material_filter,
+        variant_filter=variant_filter,
         location_filter=location_filter,
         search=search,
+        replacement_of=replacement_of,
+        replacements=replacements,
     )
 
 
@@ -106,8 +158,10 @@ def new_spool():
             material=request.form["material"],
             color=request.form["color"].strip(),
             color_hex=request.form.get("color_hex", "").strip() or None,
+            variant=request.form.get("variant", "").strip() or None,
             total_weight_g=int(request.form["total_weight_g"]),
             remaining_g=int(request.form["total_weight_g"]),
+            opened="opened" in request.form,
             notes=request.form.get("notes", "").strip() or None,
             location_id=int(request.form["location_id"]) if request.form.get("location_id") else None,
         )
@@ -129,7 +183,17 @@ def new_spool():
 def spool_detail(spool_id):
     spool = db.get_or_404(Spool, spool_id)
     logs = UsageLog.query.filter_by(spool_id=spool_id).order_by(UsageLog.logged_at.desc()).all()
-    return render_template("spool_detail.html", spool=spool, logs=logs)
+    replacement_count = 0
+    if spool.opened:
+        replacement_count = Spool.query.filter(
+            Spool.manufacturer.ilike(spool.manufacturer),
+            Spool.material == spool.material,
+            Spool.color.ilike(spool.color),
+            db.func.lower(db.func.ifnull(Spool.variant, "")) == (spool.variant or "").lower(),
+            Spool.opened == False,  # noqa: E712
+            Spool.id != spool.id,
+        ).count()
+    return render_template("spool_detail.html", spool=spool, logs=logs, replacement_count=replacement_count)
 
 
 @spools_bp.route("/<int:spool_id>/edit", methods=["GET", "POST"])
@@ -150,8 +214,10 @@ def edit_spool(spool_id):
         spool.material = request.form["material"]
         spool.color = request.form["color"].strip()
         spool.color_hex = request.form.get("color_hex", "").strip() or None
+        spool.variant = request.form.get("variant", "").strip() or None
         spool.total_weight_g = int(request.form["total_weight_g"])
         spool.remaining_g = max(0, min(int(request.form.get("remaining_g", spool.remaining_g)), spool.total_weight_g))
+        spool.opened = "opened" in request.form
         spool.notes = request.form.get("notes", "").strip() or None
         spool.location_id = int(request.form["location_id"]) if request.form.get("location_id") else None
 

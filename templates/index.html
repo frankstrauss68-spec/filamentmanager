@@ -11,16 +11,35 @@
   </a>
 </div>
 
+{% if replacement_of %}
+<div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-3">
+  <i class="bi bi-box-seam"></i>
+  <span>Ungeöffnete Ersatzspulen für diese Spule.</span>
+  <a href="{{ url_for('spools.index') }}" class="btn btn-sm btn-outline-secondary ms-auto">
+    <i class="bi bi-x-lg me-1"></i>Zurück zur Übersicht
+  </a>
+</div>
+{% endif %}
+
 {# Filterleiste #}
+{% if not replacement_of %}
 <form method="get" class="row g-2 mb-4">
-  <div class="col-md-4">
-    <input type="text" name="q" class="form-control" placeholder="Suche (Hersteller, Farbe, Notiz)" value="{{ search }}">
-  </div>
   <div class="col-md-3">
+    <input type="text" name="q" class="form-control" placeholder="Suche (Hersteller, Farbe…)" value="{{ search }}">
+  </div>
+  <div class="col-md-2">
     <select name="material" class="form-select">
       <option value="">Alle Materialien</option>
       {% for m in materials %}
         <option value="{{ m }}" {% if m == material_filter %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <select name="variant" class="form-select">
+      <option value="">Alle Varianten</option>
+      {% for v in all_variants %}
+        <option value="{{ v }}" {% if v == variant_filter %}selected{% endif %}>{{ v }}</option>
       {% endfor %}
     </select>
   </div>
@@ -37,13 +56,14 @@
     <button type="submit" class="btn btn-outline-primary flex-grow-1">
       <i class="bi bi-funnel"></i>
     </button>
-    {% if search or material_filter or location_filter %}
+    {% if search or material_filter or variant_filter or location_filter %}
       <a href="{{ url_for('spools.index') }}" class="btn btn-outline-secondary">
         <i class="bi bi-x-lg"></i>
       </a>
     {% endif %}
   </div>
 </form>
+{% endif %}
 
 {% if spools %}
 <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
@@ -53,7 +73,21 @@
       <div class="card-header d-flex align-items-center gap-2 py-2">
         <span class="color-swatch" style="background-color: {{ spool.color_hex or '#cccccc' }};"></span>
         <span class="fw-semibold text-truncate">{{ spool.manufacturer }}</span>
-        <span class="badge bg-primary ms-auto">{{ spool.material }}</span>
+
+        {# Badges rechts #}
+        <div class="ms-auto d-flex gap-1 align-items-center">
+          {% if not spool.opened %}
+            <span class="badge bg-light border text-secondary" title="Noch nicht geöffnet">
+              <i class="bi bi-lock-fill"></i>
+            </span>
+          {% endif %}
+          {% if spool.variant and 'HS' in spool.variant.upper() %}
+            <span class="badge bg-warning text-dark" title="High Speed">
+              <i class="bi bi-lightning-fill"></i>
+            </span>
+          {% endif %}
+          <span class="badge bg-primary">{{ spool.material }}{% if spool.variant %} {{ spool.variant }}{% endif %}</span>
+        </div>
       </div>
 
       {% if spool.photo_filename %}
@@ -67,6 +101,8 @@
 
       <div class="card-body pb-2">
         <h6 class="card-title mb-1">{{ spool.color }}</h6>
+
+        {% if spool.opened %}
         <div class="mb-2">
           <div class="progress" style="height: 10px;" title="{{ spool.remaining_percent }}%">
             <div class="progress-bar bg-{{ spool.progress_color }}"
@@ -74,13 +110,32 @@
           </div>
           <small class="text-muted">{{ spool.remaining_g }}g / {{ spool.total_weight_g }}g verbleibend</small>
         </div>
-        {% if spool.location %}
-          <span class="badge bg-secondary">
-            <i class="bi bi-geo-alt me-1"></i>{{ spool.location.name }}
-          </span>
         {% else %}
-          <span class="badge bg-light text-muted border">Kein Lagerort</span>
+        <div class="mb-2">
+          <div class="progress" style="height: 10px;">
+            <div class="progress-bar bg-secondary" style="width: 100%"></div>
+          </div>
+          <small class="text-muted">{{ spool.total_weight_g }}g — ungeöffnet</small>
+        </div>
         {% endif %}
+
+        <div class="d-flex flex-wrap gap-1 mt-1">
+          {% if spool.location %}
+            <span class="badge bg-secondary">
+              <i class="bi bi-geo-alt me-1"></i>{{ spool.location.name }}
+            </span>
+          {% else %}
+            <span class="badge bg-light text-muted border">Kein Lagerort</span>
+          {% endif %}
+
+          {% if spool.id in replacements %}
+            <a href="{{ url_for('spools.index', replacement_of=spool.id) }}"
+               class="badge bg-success text-decoration-none"
+               title="{{ replacements[spool.id] }} ungeöffnte Ersatzspule(n) vorhanden">
+              <i class="bi bi-box-seam me-1"></i>{{ replacements[spool.id] }}× Ersatz
+            </a>
+          {% endif %}
+        </div>
       </div>
 
       <div class="card-footer d-flex gap-2 py-2">
@@ -100,7 +155,7 @@
 {% else %}
 <div class="text-center py-5 text-muted">
   <i class="bi bi-layers display-3 d-block mb-3"></i>
-  {% if search or material_filter or location_filter %}
+  {% if search or material_filter or variant_filter or location_filter %}
     <p class="fs-5">Keine Spulen gefunden. <a href="{{ url_for('spools.index') }}">Filter zurücksetzen</a></p>
   {% else %}
     <p class="fs-5">Noch keine Spulen angelegt.</p>

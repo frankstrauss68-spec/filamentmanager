@@ -18,7 +18,7 @@
       </div>
 
       <div class="row g-3 mb-3">
-        <div class="col-sm-6">
+        <div class="col-sm-4">
           <label class="form-label fw-semibold">Material <span class="text-danger">*</span></label>
           <select name="material" class="form-select" required>
             {% for m in materials %}
@@ -26,7 +26,26 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-sm-6">
+        <div class="col-sm-4">
+          <label class="form-label fw-semibold">Variante</label>
+          <input type="text" name="variant" class="form-control"
+                 list="variant-suggestions"
+                 value="{{ form.variant or '' }}"
+                 placeholder="z.B. Pro, HS, 95A">
+          <datalist id="variant-suggestions">
+            <option value="Pro">
+            <option value="HS">
+            <option value="HS+">
+            <option value="Matte">
+            <option value="Silk">
+            <option value="CF">
+            <option value="GF">
+            <option value="95A">
+            <option value="87A">
+            <option value="85A">
+          </datalist>
+        </div>
+        <div class="col-sm-4">
           <label class="form-label fw-semibold">Lagerort</label>
           <select name="location_id" class="form-select">
             <option value="">— Kein Lagerort —</option>
@@ -71,6 +90,17 @@
           <div class="form-text">Wird normalerweise über das Verbrauchsprotokoll aktualisiert.</div>
         </div>
         {% endif %}
+      </div>
+
+      <div class="mb-3">
+        <div class="form-check">
+          <input type="checkbox" name="opened" id="openedCheck" class="form-check-input"
+                 {% if form.opened %}checked{% endif %}>
+          <label class="form-check-label fw-semibold" for="openedCheck">
+            Spule bereits geöffnet
+          </label>
+          <div class="form-text">Wird automatisch gesetzt, sobald der erste Verbrauch eingetragen wird.</div>
+        </div>
       </div>
 
       <div class="mb-3">

@@ -47,11 +47,32 @@ def create_app():
         # Import PrintJob so SQLAlchemy includes it in create_all()
         import monitor.models_extension  # noqa: F401
         db.create_all()
+        _migrate_db()
 
     from monitor.prusalink import start_monitor
     start_monitor(app)
 
     return app
+
+
+def _migrate_db():
+    """Add columns introduced after initial schema creation."""
+    new_cols = {
+        "variant": "ALTER TABLE spools ADD COLUMN variant VARCHAR(50) DEFAULT NULL",
+        "opened": "ALTER TABLE spools ADD COLUMN opened BOOLEAN NOT NULL DEFAULT FALSE",
+    }
+    with db.engine.connect() as conn:
+        result = conn.execute(
+            db.text(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
+                " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'spools'"
+            )
+        )
+        existing = {row[0] for row in result}
+        for col, ddl in new_cols.items():
+            if col not in existing:
+                conn.execute(db.text(ddl))
+        conn.commit()
 
 
 if __name__ == "__main__":

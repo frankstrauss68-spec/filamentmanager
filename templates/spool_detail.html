@@ -56,7 +56,28 @@
       <div class="card-body">
         <table class="table table-sm table-borderless mb-3">
           <tr><th class="text-muted" style="width:45%">Hersteller</th><td>{{ spool.manufacturer }}</td></tr>
-          <tr><th class="text-muted">Material</th><td><span class="badge bg-primary">{{ spool.material }}</span></td></tr>
+          <tr>
+            <th class="text-muted">Material</th>
+            <td>
+              <span class="badge bg-primary">{{ spool.material }}</span>
+              {% if spool.variant %}
+                <span class="badge bg-secondary ms-1">
+                  {% if 'HS' in spool.variant.upper() %}<i class="bi bi-lightning-fill me-1"></i>{% endif %}
+                  {{ spool.variant }}
+                </span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th class="text-muted">Status</th>
+            <td>
+              {% if spool.opened %}
+                <span class="text-success"><i class="bi bi-lock-open me-1"></i>Geöffnet</span>
+              {% else %}
+                <span class="text-secondary"><i class="bi bi-lock-fill me-1"></i>Ungeöffnet</span>
+              {% endif %}
+            </td>
+          </tr>
           <tr>
             <th class="text-muted">Farbe</th>
             <td class="d-flex align-items-center gap-2">
@@ -90,6 +111,13 @@
             <span id="remaining-pct">{{ spool.remaining_percent }}</span>%
           </div>
         </div>
+
+        {% if replacement_count > 0 %}
+        <a href="{{ url_for('spools.index', replacement_of=spool.id) }}"
+           class="btn btn-sm btn-outline-success w-100 mt-2">
+          <i class="bi bi-box-seam me-1"></i>{{ replacement_count }}× ungeöffnte Ersatzspule{% if replacement_count > 1 %}n{% endif %} vorhanden
+        </a>
+        {% endif %}
       </div>
     </div>
   </div>

@@ -35,6 +35,8 @@ class Spool(db.Model):
     remaining_g = db.Column(db.Integer, nullable=False)
     notes = db.Column(db.Text, nullable=True)
     photo_filename = db.Column(db.String(255), nullable=True)
+    variant = db.Column(db.String(50), nullable=True)
+    opened = db.Column(db.Boolean, nullable=False, default=False)
     location_id = db.Column(db.Integer, db.ForeignKey("locations.id", ondelete="SET NULL"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -76,7 +78,10 @@ class UsageLog(db.Model):
 @event.listens_for(UsageLog, "after_insert")
 def decrement_remaining(mapper, connection, target):
     connection.execute(
-        db.text("UPDATE spools SET remaining_g = GREATEST(0, remaining_g - :used) WHERE id = :sid"),
+        db.text(
+            "UPDATE spools SET remaining_g = GREATEST(0, remaining_g - :used),"
+            " opened = TRUE WHERE id = :sid"
+        ),
         {"used": target.used_g, "sid": target.spool_id},
     )
 
