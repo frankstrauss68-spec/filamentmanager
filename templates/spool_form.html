@@ -1,13 +1,22 @@
 {% extends "base.html" %}
 {% set editing = spool is defined and spool.id is defined %}
-{% block title %}{% if editing %}Spule bearbeiten{% else %}Neue Spule{% endif %} — FilamentManager{% endblock %}
+{% set cloning = clone_of is defined %}
+{% block title %}
+  {% if editing %}Spule bearbeiten{% elif cloning %}Spule klonen{% else %}Neue Spule{% endif %} — FilamentManager
+{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-8 col-lg-6">
     <h4 class="mb-4">
-      <i class="bi bi-{% if editing %}pencil{% else %}plus-circle{% endif %} me-2"></i>
-      {% if editing %}{{ spool.manufacturer }} {{ spool.color }} bearbeiten{% else %}Neue Spule anlegen{% endif %}
+      <i class="bi bi-{% if editing %}pencil{% elif cloning %}copy{% else %}plus-circle{% endif %} me-2"></i>
+      {% if editing %}
+        {{ spool.manufacturer }} {{ spool.color }} bearbeiten
+      {% elif cloning %}
+        {{ clone_of.manufacturer }} {{ clone_of.color }} klonen
+      {% else %}
+        Neue Spule anlegen
+      {% endif %}
     </h4>
 
     <form method="post" enctype="multipart/form-data" novalidate>

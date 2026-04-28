@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Drucker — FilamentManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-printer me-2"></i>Drucker</h4>
+  <a class="btn btn-primary" href="{{ url_for('printers.new_printer') }}">
+    <i class="bi bi-plus-lg me-1"></i>Drucker hinzufügen
+  </a>
+</div>
+
+{% if printers %}
+<div class="row g-4">
+  {% for printer in printers %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-printer fs-5"></i>
+        <span class="fw-semibold text-truncate">{{ printer.name }}</span>
+        {% if printer.last_state %}
+          <span class="badge bg-{{ printer.state_badge }} ms-auto">{{ printer.state_label }}</span>
+        {% else %}
+          <span class="badge bg-secondary ms-auto">Nicht verbunden</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><th class="text-muted" style="width:40%">IP-Adresse</th><td><code>{{ printer.ip }}</code></td></tr>
+          <tr><th class="text-muted">API-Key</th><td><code>{{ printer.api_key }}</code></td></tr>
+          <tr><th class="text-muted">Poll-Intervall</th><td>{{ printer.poll_interval }}s</td></tr>
+          <tr>
+            <th class="text-muted">Spule</th>
+            <td>
+              {% if printer.spool %}
+                <span class="color-swatch me-1"
+                      style="background-color: {{ printer.spool.color_hex or '#ccc' }};"></span>
+                {{ printer.spool.manufacturer }} {{ printer.spool.color }}
+                <span class="badge bg-primary ms-1">{{ printer.spool.material }}</span>
+              {% else %}
+                <span class="text-muted">— keine —</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% if printer.last_polled_at %}
+          <tr>
+            <th class="text-muted">Letzter Poll</th>
+            <td class="text-muted small">{{ printer.last_polled_at.strftime('%d.%m.%Y %H:%M') }}</td>
+          </tr>
+          {% endif %}
+        </table>
+      </div>
+      <div class="card-footer d-flex gap-2 py-2">
+        <a class="btn btn-sm btn-outline-secondary flex-grow-1"
+           href="{{ url_for('printers.edit_printer', printer_id=printer.id) }}">
+          <i class="bi bi-pencil me-1"></i>Bearbeiten
+        </a>
+        <form method="post" action="{{ url_for('printers.delete_printer', printer_id=printer.id) }}"
+              onsubmit="return confirm('Drucker „{{ printer.name }}" wirklich löschen?')">
+          <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-printer display-3 d-block mb-3"></i>
+  <p class="fs-5">Noch kein Drucker konfiguriert.</p>
+  <a class="btn btn-primary" href="{{ url_for('printers.new_printer') }}">
+    <i class="bi bi-plus-lg me-1"></i>Ersten Drucker hinzufügen
+  </a>
+</div>
+{% endif %}
+
+<div class="alert alert-info mt-4 py-2">
+  <i class="bi bi-info-circle me-2"></i>
+  Nach dem Hinzufügen oder Ändern eines Druckers muss die App neu gestartet werden,
+  damit der Monitor aktiv wird.
+</div>
+{% endblock %}

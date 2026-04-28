@@ -31,6 +31,12 @@
             <i class="bi bi-geo-alt me-1"></i>Lagerorte
           </a>
         </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.blueprint == 'printers' %}active{% endif %}"
+             href="{{ url_for('printers.index') }}">
+            <i class="bi bi-printer me-1"></i>Drucker
+          </a>
+        </li>
       </ul>
       <a class="btn btn-primary btn-sm" href="{{ url_for('spools.new_spool') }}">
         <i class="bi bi-plus-lg me-1"></i>Neue Spule

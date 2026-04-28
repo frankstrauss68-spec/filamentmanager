@@ -11,6 +11,61 @@
   </a>
 </div>
 
+{# ── Drucker-Status-Widgets ── #}
+{% if printer_widgets %}
+<div class="row g-3 mb-4">
+  {% for w in printer_widgets %}
+  {% set p = w.printer %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card border-{{ p.state_badge }} h-100">
+      <div class="card-header d-flex align-items-center gap-2 py-2 bg-{{ p.state_badge }} bg-opacity-10">
+        <i class="bi bi-printer fs-5"></i>
+        <span class="fw-semibold text-truncate">{{ p.name }}</span>
+        <span class="badge bg-{{ p.state_badge }} ms-auto">{{ p.state_label }}</span>
+      </div>
+      <div class="card-body py-2">
+        {% if p.last_state == "PRINTING" or p.last_state == "PAUSED" %}
+          {% if p.last_filename %}
+            <p class="mb-1 small text-truncate" title="{{ p.last_filename }}">
+              <i class="bi bi-file-earmark me-1"></i>{{ p.last_filename }}
+            </p>
+          {% endif %}
+          {% if p.last_progress is not none %}
+            <div class="progress mb-1" style="height:8px;">
+              <div class="progress-bar bg-{{ p.state_badge }}"
+                   style="width:{{ p.last_progress|round|int }}%"></div>
+            </div>
+            <div class="d-flex justify-content-between small text-muted">
+              <span>{{ p.last_progress|round|int }}%</span>
+              {% if p.time_remaining_fmt %}
+                <span><i class="bi bi-clock me-1"></i>{{ p.time_remaining_fmt }}</span>
+              {% endif %}
+            </div>
+          {% endif %}
+          {% if p.spool %}
+            <div class="mt-2 small">
+              <span class="color-swatch me-1"
+                    style="background-color:{{ p.spool.color_hex or '#ccc' }};"></span>
+              {{ p.spool.manufacturer }} {{ p.spool.color }}
+              {% if w.estimated_remaining is not none %}
+                <span class="text-muted">→ ~{{ w.estimated_remaining }}g verbleibend</span>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% elif p.last_state == "IDLE" %}
+          <p class="mb-0 small text-muted"><i class="bi bi-check-circle me-1"></i>Bereit</p>
+        {% elif p.last_state in ("ERROR", "STOPPED") %}
+          <p class="mb-0 small text-danger"><i class="bi bi-exclamation-triangle me-1"></i>{{ p.state_label }}</p>
+        {% else %}
+          <p class="mb-0 small text-muted">Noch keine Verbindung.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if replacement_of %}
 <div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-3">
   <i class="bi bi-box-seam"></i>

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set editing = printer is defined %}
+{% block title %}{% if editing %}Drucker bearbeiten{% else %}Drucker hinzufügen{% endif %} — FilamentManager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-7 col-lg-5">
+    <h4 class="mb-4">
+      <i class="bi bi-printer me-2"></i>
+      {% if editing %}{{ printer.name }} bearbeiten{% else %}Neuen Drucker hinzufügen{% endif %}
+    </h4>
+
+    <form method="post" novalidate>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+        <input type="text" name="name" class="form-control"
+               value="{{ form.name or '' }}" required placeholder="z.B. Prusa MK4">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">IP-Adresse <span class="text-danger">*</span></label>
+        <input type="text" name="ip" class="form-control"
+               value="{{ form.ip or '' }}" required placeholder="192.168.1.x">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">API-Key <span class="text-danger">*</span></label>
+        <input type="text" name="api_key" class="form-control font-monospace"
+               value="{{ form.api_key or '' }}" required placeholder="PrusaLink API-Key">
+        <div class="form-text">Zu finden in PrusaLink → Einstellungen → API-Schlüssel.</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Abfrage-Intervall (Sekunden)</label>
+        <input type="number" name="poll_interval" class="form-control"
+               value="{{ form.poll_interval or 30 }}" min="10" max="300">
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Aktuell eingelegte Spule</label>
+        <select name="spool_id" class="form-select">
+          <option value="">— Keine Spule zugeordnet —</option>
+          {% for spool in spools %}
+            <option value="{{ spool.id }}"
+              {% if (form.spool_id|string if form.spool_id else '') == spool.id|string %}selected{% endif %}>
+              {{ spool.manufacturer }} {{ spool.color }} ({{ spool.material }}
+              {%- if spool.variant %} {{ spool.variant }}{% endif %})
+              — {{ spool.remaining_g }}g
+            </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">
+          Bei Druckende wird der Verbrauch automatisch von dieser Spule abgezogen.
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1">
+          <i class="bi bi-floppy me-1"></i>Speichern
+        </button>
+        <a href="{{ url_for('printers.index') }}" class="btn btn-outline-secondary">Abbrechen</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

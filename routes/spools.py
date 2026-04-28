@@ -128,6 +128,21 @@ def index():
             if count > 0:
                 replacements[spool.id] = count
 
+    from models import Printer
+    from monitor.models_extension import PrintJob
+    printer_widgets = []
+    for p in Printer.query.order_by(Printer.name).all():
+        estimated_remaining = None
+        if p.last_state == "PRINTING" and p.spool and p.last_progress is not None:
+            current_job = PrintJob.query.filter_by(
+                printer_id=p.id, finished_at=None
+            ).order_by(PrintJob.started_at.desc()).first()
+            if current_job and current_job.filament_total_g:
+                estimated_remaining = max(
+                    0, round(p.spool.remaining_g - current_job.filament_total_g)
+                )
+        printer_widgets.append({"printer": p, "estimated_remaining": estimated_remaining})
+
     return render_template(
         "index.html",
         spools=spools,
@@ -140,6 +155,7 @@ def index():
         search=search,
         replacement_of=replacement_of,
         replacements=replacements,
+        printer_widgets=printer_widgets,
     )
 
 
@@ -243,6 +259,30 @@ def delete_spool(spool_id):
     db.session.commit()
     flash("Spule gelöscht.", "info")
     return redirect(url_for("spools.index"))
+
+
+@spools_bp.route("/<int:spool_id>/clone")
+def clone_spool(spool_id):
+    src = db.get_or_404(Spool, spool_id)
+    prefill = dict(
+        manufacturer=src.manufacturer,
+        material=src.material,
+        color=src.color,
+        color_hex=src.color_hex or "",
+        variant=src.variant or "",
+        total_weight_g=src.total_weight_g,
+        notes=src.notes or "",
+        location_id=src.location_id,
+        opened=False,
+    )
+    locations = Location.query.order_by(Location.name).all()
+    return render_template(
+        "spool_form.html",
+        locations=locations,
+        materials=MATERIALS,
+        form=prefill,
+        clone_of=src,
+    )
 
 
 @spools_bp.route("/<int:spool_id>/qr.png")

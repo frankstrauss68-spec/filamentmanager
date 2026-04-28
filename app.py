@@ -34,17 +34,18 @@ def create_app():
     from routes.spools import spools_bp
     from routes.locations import locations_bp
     from routes.usage import usage_bp
+    from routes.printers import printers_bp
 
     app.register_blueprint(spools_bp, url_prefix="/spools")
     app.register_blueprint(locations_bp, url_prefix="/locations")
     app.register_blueprint(usage_bp, url_prefix="/usage")
+    app.register_blueprint(printers_bp, url_prefix="/printers")
 
     @app.route("/")
     def index():
         return redirect(url_for("spools.index"))
 
     with app.app_context():
-        # Import PrintJob so SQLAlchemy includes it in create_all()
         import monitor.models_extension  # noqa: F401
         db.create_all()
         _migrate_db()
@@ -56,22 +57,38 @@ def create_app():
 
 
 def _migrate_db():
-    """Add columns introduced after initial schema creation."""
-    new_cols = {
-        "variant": "ALTER TABLE spools ADD COLUMN variant VARCHAR(50) DEFAULT NULL",
-        "opened": "ALTER TABLE spools ADD COLUMN opened BOOLEAN NOT NULL DEFAULT FALSE",
-    }
+    """Idempotent schema migrations for columns added after initial deploy."""
     with db.engine.connect() as conn:
-        result = conn.execute(
-            db.text(
+        def existing_cols(table):
+            r = conn.execute(db.text(
                 "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
-                " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'spools'"
-            )
-        )
-        existing = {row[0] for row in result}
-        for col, ddl in new_cols.items():
-            if col not in existing:
+                " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t"
+            ), {"t": table})
+            return {row[0] for row in r}
+
+        # spools table
+        spool_cols = existing_cols("spools")
+        spool_ddl = {
+            "variant": "ALTER TABLE spools ADD COLUMN variant VARCHAR(50) DEFAULT NULL",
+            "opened":  "ALTER TABLE spools ADD COLUMN opened BOOLEAN NOT NULL DEFAULT FALSE",
+        }
+        for col, ddl in spool_ddl.items():
+            if col not in spool_cols:
                 conn.execute(db.text(ddl))
+
+        # locations: migrate 'printer' type → 'shelf', then narrow enum
+        conn.execute(db.text("UPDATE locations SET type='shelf' WHERE type='printer'"))
+        conn.execute(db.text(
+            "ALTER TABLE locations MODIFY type ENUM('shelf','box') NOT NULL DEFAULT 'shelf'"
+        ))
+
+        # print_jobs table
+        pj_cols = existing_cols("print_jobs")
+        if "printer_id" not in pj_cols:
+            conn.execute(db.text(
+                "ALTER TABLE print_jobs ADD COLUMN printer_id INT DEFAULT NULL"
+            ))
+
         conn.commit()
 
 

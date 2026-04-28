@@ -1,14 +1,12 @@
 """
 PrusaLink background monitor.
 
-Polls the printer every POLL_INTERVAL seconds and:
-- Creates a PrintJob when printing starts
-- Closes the PrintJob and optionally deducts filament from the assigned
-  spool when printing finishes or is stopped
+Loads all Printer records from the DB at startup and spawns one thread
+per printer. Each thread polls its printer every poll_interval seconds,
+updates Printer.last_* status fields, and handles PrintJob lifecycle.
 """
 
 import logging
-import os
 import struct
 import threading
 import time
@@ -29,9 +27,7 @@ TERMINAL_STATES = {"FINISHED", "STOPPED", "ERROR"}
 # ---------------------------------------------------------------------------
 
 def _parse_kv_block(text, prefix=""):
-    """Extract filament_g and filament_mm from a key=value text block."""
-    filament_g = None
-    filament_mm = None
+    filament_g = filament_mm = None
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if prefix and not line.startswith(prefix):
@@ -51,31 +47,10 @@ def _parse_kv_block(text, prefix=""):
 
 
 def _parse_bgcode(data: bytes):
-    """
-    Parse a BGcode binary file.
-
-    File layout:
-        magic   : 6 bytes  ("BGCODE")
-        version : 1 byte
-        blocks  : repeated until EOF
-            type             : uint16 LE
-            compression      : uint16 LE  (0=none, 1=deflate/zlib)
-            uncompressed_size: uint32 LE
-            compressed_size  : uint32 LE  (only when compression != 0)
-            checksum         : uint32 LE  (CRC32, skipped)
-            data             : compressed_size bytes
-
-    Metadata blocks can be type 2 (SlicerMetadata), 3 (PrinterMetadata),
-    or 4 (per user spec). We scan all three and return the first hit.
-    """
-    MAGIC = b"BGCODE"
-    if not data.startswith(MAGIC):
+    if not data.startswith(b"BGCODE"):
         return None, None
-
-    pos = len(MAGIC) + 1  # skip magic + version byte
-    best_g = None
-    best_mm = None
-
+    pos = 7  # magic (6) + version (1)
+    best_g = best_mm = None
     while pos < len(data):
         try:
             if pos + 8 > len(data):
@@ -91,45 +66,33 @@ def _parse_bgcode(data: bytes):
                 pos += 4
             else:
                 compressed_size = uncompressed_size
-            pos += 4  # skip checksum
-
+            pos += 4  # checksum
             block_bytes = data[pos: pos + compressed_size]
             pos += compressed_size
-
             if block_type not in (2, 3, 4):
                 continue
-
             if compression == 1:
                 text = zlib.decompress(block_bytes).decode("utf-8", errors="replace")
             elif compression == 0:
                 text = block_bytes.decode("utf-8", errors="replace")
             else:
                 continue
-
             g, mm = _parse_kv_block(text)
-            if g is not None and best_g is None:
-                best_g = g
-            if mm is not None and best_mm is None:
-                best_mm = mm
+            best_g = best_g if best_g is not None else g
+            best_mm = best_mm if best_mm is not None else mm
             if best_g is not None and best_mm is not None:
                 break
-        except struct.error:
+        except (struct.error, zlib.error) as exc:
+            logger.debug("BGcode block parse error: %s", exc)
             break
-        except zlib.error as exc:
-            logger.debug("BGcode zlib error in block type=%d: %s", block_type, exc)
-
     return best_g, best_mm
-
-
-def _parse_gcode(data: bytes):
-    text = data.decode("utf-8", errors="replace")
-    return _parse_kv_block(text, prefix="; ")
 
 
 def _extract_filament_meta(data: bytes):
     if data[:6] == b"BGCODE":
         return _parse_bgcode(data)
-    return _parse_gcode(data)
+    text = data.decode("utf-8", errors="replace")
+    return _parse_kv_block(text, prefix="; ")
 
 
 # ---------------------------------------------------------------------------
@@ -137,105 +100,85 @@ def _extract_filament_meta(data: bytes):
 # ---------------------------------------------------------------------------
 
 class PrusaLinkMonitor:
-    def __init__(self, app, ip: str, api_key: str, poll_interval: int = 30):
+    def __init__(self, app, printer_id: int):
         self.app = app
-        self.base_url = f"http://{ip}"
-        self.auth = HTTPDigestAuth("maker", api_key)
-        self.poll_interval = poll_interval
-
+        self.printer_id = printer_id
         self._prev_state: str | None = None
         self._current_job_db_id: int | None = None
-        self._thread: threading.Thread | None = None
 
     def start(self):
-        self._thread = threading.Thread(
-            target=self._run, daemon=True, name="prusalink-monitor"
+        t = threading.Thread(
+            target=self._run, daemon=True,
+            name=f"prusalink-{self.printer_id}"
         )
-        self._thread.start()
+        t.start()
 
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
 
     def _run(self):
-        logger.info("PrusaLink monitor thread started")
+        with self.app.app_context():
+            from models import Printer
+            printer = db_get(Printer, self.printer_id)
+            if not printer:
+                return
+            logger.info("Monitor started for printer #%d (%s, %s)",
+                        self.printer_id, printer.name, printer.ip)
+            base_url = f"http://{printer.ip}"
+            auth = HTTPDigestAuth("maker", printer.api_key)
+            poll_interval = printer.poll_interval
+
         while True:
             try:
-                self._poll()
+                self._poll(base_url, auth)
             except Exception:
-                logger.exception("Unhandled error in monitor poll")
-            time.sleep(self.poll_interval)
+                logger.exception("Unhandled error in monitor for printer #%d", self.printer_id)
+            time.sleep(poll_interval)
 
-    def _poll(self):
-        status = self._get("/api/v1/status")
+    def _poll(self, base_url: str, auth):
+        status = _get(base_url, "/api/v1/status", auth)
         if status is None:
             return
 
-        state = (
-            (status.get("printer") or {}).get("state") or "UNKNOWN"
-        ).upper()
-
+        state = ((status.get("printer") or {}).get("state") or "UNKNOWN").upper()
         job_data = None
         if state in ACTIVE_STATES | TERMINAL_STATES:
-            job_data = self._get_job()
+            job_data = _get_job(base_url, auth)
+
+        progress = (job_data or {}).get("progress")
+        filename = ((job_data or {}).get("file") or {}).get("name")
+        time_remaining = ((status.get("job") or {}).get("time_remaining"))
+
+        # Update status cache in DB
+        with self.app.app_context():
+            from models import db, Printer
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                conn.execute(text(
+                    "UPDATE printers SET last_state=:s, last_polled_at=:t,"
+                    " last_filename=:f, last_progress=:p, last_time_remaining=:r"
+                    " WHERE id=:id"
+                ), {
+                    "s": state, "t": datetime.utcnow(),
+                    "f": filename, "p": progress, "r": time_remaining,
+                    "id": self.printer_id,
+                })
+                conn.commit()
 
         prev = self._prev_state
-
         if state == "PRINTING" and prev not in ACTIVE_STATES:
-            self._on_print_start(job_data)
-
+            self._on_print_start(base_url, auth, job_data)
         elif prev in ACTIVE_STATES and state in TERMINAL_STATES:
-            progress = (job_data or {}).get("progress", 100)
-            self._on_print_finish(state, job_data, progress)
+            self._on_print_finish(state, job_data, progress or 100)
 
         self._prev_state = state
-
-    # ------------------------------------------------------------------
-    # API helpers
-    # ------------------------------------------------------------------
-
-    def _get(self, path: str):
-        try:
-            r = requests.get(
-                self.base_url + path, auth=self.auth, timeout=10
-            )
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.RequestException as exc:
-            logger.warning("PrusaLink %s failed: %s", path, exc)
-            return None
-
-    def _get_job(self):
-        try:
-            r = requests.get(
-                self.base_url + "/api/v1/job", auth=self.auth, timeout=10
-            )
-            if r.status_code == 204:
-                return None
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.RequestException as exc:
-            logger.warning("PrusaLink /api/v1/job failed: %s", exc)
-            return None
-
-    def _download_file(self, url: str) -> bytes | None:
-        if url.startswith("/"):
-            url = self.base_url + url
-        try:
-            r = requests.get(
-                url, auth=self.auth, timeout=60, stream=True
-            )
-            r.raise_for_status()
-            return r.content
-        except requests.exceptions.RequestException as exc:
-            logger.warning("File download failed (%s): %s", url, exc)
-            return None
 
     # ------------------------------------------------------------------
     # State transitions
     # ------------------------------------------------------------------
 
-    def _on_print_start(self, job_data: dict | None):
+    def _on_print_start(self, base_url, auth, job_data):
         with self.app.app_context():
             from monitor.models_extension import PrintJob
             from models import db
@@ -249,19 +192,19 @@ class PrusaLinkMonitor:
                 file_info = job_data.get("file") or {}
                 filename = file_info.get("name")
                 display_name = file_info.get("display_name") or filename
-
                 meta = file_info.get("meta") or {}
                 filament_g = meta.get("filament_used_g")
                 filament_mm = meta.get("filament_used_mm")
 
                 if filament_g is None:
-                    download_url = (file_info.get("refs") or {}).get("download")
-                    if download_url:
-                        raw = self._download_file(download_url)
+                    dl_url = (file_info.get("refs") or {}).get("download")
+                    if dl_url:
+                        raw = _download(base_url, dl_url, auth)
                         if raw:
                             filament_g, filament_mm = _extract_filament_meta(raw)
 
             job = PrintJob(
+                printer_id=self.printer_id,
                 printer_job_id=printer_job_id,
                 filename=filename,
                 display_name=display_name,
@@ -271,64 +214,45 @@ class PrusaLinkMonitor:
             db.session.add(job)
             db.session.commit()
             self._current_job_db_id = job.id
-            logger.info(
-                "Print started: %s (printer_job_id=%s, filament_g=%s)",
-                display_name,
-                printer_job_id,
-                filament_g,
-            )
+            logger.info("Print started on printer #%d: %s", self.printer_id, display_name)
 
-    def _on_print_finish(
-        self, final_state: str, job_data: dict | None, progress: float
-    ):
+    def _on_print_finish(self, final_state: str, job_data, progress: float):
         with self.app.app_context():
             from monitor.models_extension import PrintJob
-            from models import db, Spool, Location, UsageLog
+            from models import db, Spool, Printer, UsageLog
 
-            job = (
-                db.session.get(PrintJob, self._current_job_db_id)
-                if self._current_job_db_id
-                else None
-            )
+            job = db.session.get(PrintJob, self._current_job_db_id) \
+                if self._current_job_db_id else None
+            printer = db.session.get(Printer, self.printer_id)
 
-            # Compute actual filament used
             meta = ((job_data or {}).get("file") or {}).get("meta") or {}
-            total_g = (job.filament_total_g if job else None) or meta.get(
-                "filament_used_g"
-            )
-            total_mm = (job.filament_total_mm if job else None) or meta.get(
-                "filament_used_mm"
-            )
+            total_g = (job.filament_total_g if job else None) or meta.get("filament_used_g")
+            total_mm = (job.filament_total_mm if job else None) or meta.get("filament_used_mm")
 
             if total_g is not None:
-                if final_state == "FINISHED":
-                    used_g = total_g
-                    used_mm = total_mm
-                else:  # STOPPED — prorate by progress
-                    factor = max(0.0, min(float(progress), 100.0)) / 100.0
-                    used_g = round(total_g * factor, 2)
-                    used_mm = round(total_mm * factor, 2) if total_mm is not None else None
+                factor = max(0.0, min(float(progress), 100.0)) / 100.0
+                used_g = total_g if final_state == "FINISHED" else round(total_g * factor, 2)
+                used_mm = total_mm if final_state == "FINISHED" else (
+                    round(total_mm * factor, 2) if total_mm is not None else None
+                )
             else:
                 used_g = used_mm = None
 
             now = datetime.utcnow()
-
             if job:
                 job.finished_at = now
                 job.final_state = final_state
                 if job.started_at:
-                    job.duration_minutes = max(
-                        0, int((now - job.started_at).total_seconds() / 60)
-                    )
+                    job.duration_minutes = max(0, int((now - job.started_at).total_seconds() / 60))
                 if used_g is not None:
                     job.filament_total_g = used_g
                 if used_mm is not None:
                     job.filament_total_mm = used_mm
 
-            # Auto-deduct from spool at a printer location
+            # Auto-deduct from assigned spool
             deducted_spool_id = None
-            if used_g and used_g > 0:
-                spool = self._find_printer_spool(db, Location, Spool)
+            if used_g and used_g > 0 and printer and printer.spool_id:
+                spool = db.session.get(Spool, printer.spool_id)
                 if spool:
                     used_g_int = max(1, round(used_g))
                     if used_g_int <= spool.remaining_g:
@@ -336,66 +260,81 @@ class PrusaLinkMonitor:
                             (job.display_name if job else None) or "Unbekannt",
                             final_state,
                         )
-                        log_entry = UsageLog(
-                            spool_id=spool.id, used_g=used_g_int, note=note
-                        )
-                        db.session.add(log_entry)
+                        db.session.add(UsageLog(spool_id=spool.id, used_g=used_g_int, note=note))
                         deducted_spool_id = spool.id
-                        logger.info(
-                            "Auto-deducted %dg from spool #%d (%s %s)",
-                            used_g_int,
-                            spool.id,
-                            spool.manufacturer,
-                            spool.color,
-                        )
+                        logger.info("Auto-deducted %dg from spool #%d", used_g_int, spool.id)
                     else:
-                        logger.warning(
-                            "Not enough filament on spool #%d (%dg remaining, %dg needed)",
-                            spool.id,
-                            spool.remaining_g,
-                            used_g_int,
-                        )
+                        logger.warning("Spool #%d has only %dg, needed %dg",
+                                       spool.id, spool.remaining_g, used_g_int)
 
             if job:
                 job.spool_id = deducted_spool_id
-
             db.session.commit()
             self._current_job_db_id = None
-            logger.info(
-                "Print finished (%s): used_g=%s, spool_deducted=%s",
-                final_state,
-                used_g,
-                deducted_spool_id,
-            )
+            logger.info("Print finished (%s) on printer #%d: used_g=%s",
+                        final_state, self.printer_id, used_g)
 
-    @staticmethod
-    def _find_printer_spool(db, Location, Spool):
-        """Return the first spool assigned to a printer-type location."""
-        printer_locs = Location.query.filter_by(type="printer").all()
-        for loc in printer_locs:
-            spool = Spool.query.filter_by(location_id=loc.id).first()
-            if spool:
-                return spool
+
+# ---------------------------------------------------------------------------
+# HTTP helpers
+# ---------------------------------------------------------------------------
+
+def _get(base_url, path, auth):
+    try:
+        r = requests.get(base_url + path, auth=auth, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException as exc:
+        logger.warning("PrusaLink %s%s failed: %s", base_url, path, exc)
         return None
 
 
+def _get_job(base_url, auth):
+    try:
+        r = requests.get(base_url + "/api/v1/job", auth=auth, timeout=10)
+        if r.status_code == 204:
+            return None
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException as exc:
+        logger.warning("PrusaLink job fetch failed: %s", exc)
+        return None
+
+
+def _download(base_url, url, auth):
+    if url.startswith("/"):
+        url = base_url + url
+    try:
+        r = requests.get(url, auth=auth, timeout=60, stream=True)
+        r.raise_for_status()
+        return r.content
+    except requests.exceptions.RequestException as exc:
+        logger.warning("File download failed: %s", exc)
+        return None
+
+
+def db_get(model, pk):
+    from models import db
+    return db.session.get(model, pk)
+
+
 # ---------------------------------------------------------------------------
-# Public entry point called from app.py
+# Public entry point
 # ---------------------------------------------------------------------------
 
 def start_monitor(app):
-    ip = os.environ.get("PRINTER_IP", "").strip()
-    api_key = os.environ.get("PRINTER_API_KEY", "").strip()
-    poll_interval = int(os.environ.get("POLL_INTERVAL", "30"))
+    with app.app_context():
+        from models import Printer
+        printers = Printer.query.all()
 
-    if not ip or not api_key:
-        app.logger.info(
-            "PrusaLink monitor disabled (set PRINTER_IP and PRINTER_API_KEY to enable)"
-        )
+    if not printers:
+        app.logger.info("PrusaLink monitor: no printers configured, monitor inactive.")
         return
 
-    monitor = PrusaLinkMonitor(app, ip, api_key, poll_interval)
-    monitor.start()
-    app.logger.info(
-        "PrusaLink monitor started: polling http://%s every %ds", ip, poll_interval
-    )
+    for printer in printers:
+        monitor = PrusaLinkMonitor(app, printer.id)
+        monitor.start()
+        app.logger.info(
+            "PrusaLink monitor started for '%s' (%s), polling every %ds",
+            printer.name, printer.ip, printer.poll_interval
+        )

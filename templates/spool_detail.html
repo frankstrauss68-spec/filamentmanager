@@ -14,6 +14,10 @@
     <a href="{{ url_for('spools.edit_spool', spool_id=spool.id) }}" class="btn btn-outline-secondary">
       <i class="bi bi-pencil me-1"></i>Bearbeiten
     </a>
+    <a href="{{ url_for('spools.clone_spool', spool_id=spool.id) }}" class="btn btn-outline-secondary"
+       title="Als Ersatzspule klonen">
+      <i class="bi bi-copy me-1"></i>Klonen
+    </a>
     <form method="post" action="{{ url_for('spools.delete_spool', spool_id=spool.id) }}"
           onsubmit="return confirm('Spule wirklich löschen?')">
       <button type="submit" class="btn btn-outline-danger">
