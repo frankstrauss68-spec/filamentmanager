@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>QR-Etikett — {{ spool.manufacturer }} {{ spool.color }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f0f0f0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
+    .label {
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 16px;
+      width: 280px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .label img { width: 200px; height: 200px; }
+    .label .title { font-size: 14px; font-weight: bold; margin-top: 8px; }
+    .label .sub { font-size: 12px; color: #555; margin-top: 4px; }
+    .label .badge {
+      display: inline-block;
+      background: #0d6efd;
+      color: white;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+      margin-top: 6px;
+    }
+    .label .color-dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid #ccc;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    .actions { display: flex; gap: 8px; }
+    .btn { padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #0d6efd; color: white; }
+    .btn-secondary { background: #6c757d; color: white; }
+    @media print {
+      body { background: white; justify-content: flex-start; padding: 0; }
+      .actions { display: none; }
+      .label { box-shadow: none; border: none; }
+      @page { margin: 5mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <img src="{{ request.host_url.rstrip('/') }}/spools/{{ spool.id }}/qr.png" alt="QR-Code">
+    <div class="title">
+      <span class="color-dot" style="background-color: {{ spool.color_hex or '#ccc' }};"></span>
+      {{ spool.manufacturer }} {{ spool.color }}
+    </div>
+    <div class="sub">{{ spool.material }}</div>
+    <div class="sub">{{ spool.remaining_g }}g / {{ spool.total_weight_g }}g</div>
+    <div class="badge">{{ spool.material }}</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="window.print()">Drucken</button>
+    <button class="btn btn-secondary" onclick="window.close()">Schließen</button>
+  </div>
+</body>
+</html>

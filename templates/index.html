@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — FilamentManager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-layers me-2"></i>Meine Spulen
+    <span class="badge bg-secondary ms-2">{{ spools|length }}</span>
+  </h4>
+  <a class="btn btn-primary" href="{{ url_for('spools.new_spool') }}">
+    <i class="bi bi-plus-lg me-1"></i>Neue Spule
+  </a>
+</div>
+
+{# Filterleiste #}
+<form method="get" class="row g-2 mb-4">
+  <div class="col-md-4">
+    <input type="text" name="q" class="form-control" placeholder="Suche (Hersteller, Farbe, Notiz)" value="{{ search }}">
+  </div>
+  <div class="col-md-3">
+    <select name="material" class="form-select">
+      <option value="">Alle Materialien</option>
+      {% for m in materials %}
+        <option value="{{ m }}" {% if m == material_filter %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select name="location_id" class="form-select">
+      <option value="">Alle Lagerorte</option>
+      <option value="none" {% if location_filter == 'none' %}selected{% endif %}>Kein Lagerort</option>
+      {% for loc in locations %}
+        <option value="{{ loc.id }}" {% if location_filter == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2 d-flex gap-2">
+    <button type="submit" class="btn btn-outline-primary flex-grow-1">
+      <i class="bi bi-funnel"></i>
+    </button>
+    {% if search or material_filter or location_filter %}
+      <a href="{{ url_for('spools.index') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-x-lg"></i>
+      </a>
+    {% endif %}
+  </div>
+</form>
+
+{% if spools %}
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+  {% for spool in spools %}
+  <div class="col">
+    <div class="card h-100 shadow-sm spool-card">
+      <div class="card-header d-flex align-items-center gap-2 py-2">
+        <span class="color-swatch" style="background-color: {{ spool.color_hex or '#cccccc' }};"></span>
+        <span class="fw-semibold text-truncate">{{ spool.manufacturer }}</span>
+        <span class="badge bg-primary ms-auto">{{ spool.material }}</span>
+      </div>
+
+      {% if spool.photo_filename %}
+        <img src="{{ url_for('static', filename='uploads/' + spool.photo_filename) }}"
+             class="card-img-top spool-photo" alt="{{ spool.color }}">
+      {% else %}
+        <div class="spool-photo-placeholder d-flex align-items-center justify-content-center text-muted">
+          <i class="bi bi-image fs-1"></i>
+        </div>
+      {% endif %}
+
+      <div class="card-body pb-2">
+        <h6 class="card-title mb-1">{{ spool.color }}</h6>
+        <div class="mb-2">
+          <div class="progress" style="height: 10px;" title="{{ spool.remaining_percent }}%">
+            <div class="progress-bar bg-{{ spool.progress_color }}"
+                 style="width: {{ spool.remaining_percent }}%"></div>
+          </div>
+          <small class="text-muted">{{ spool.remaining_g }}g / {{ spool.total_weight_g }}g verbleibend</small>
+        </div>
+        {% if spool.location %}
+          <span class="badge bg-secondary">
+            <i class="bi bi-geo-alt me-1"></i>{{ spool.location.name }}
+          </span>
+        {% else %}
+          <span class="badge bg-light text-muted border">Kein Lagerort</span>
+        {% endif %}
+      </div>
+
+      <div class="card-footer d-flex gap-2 py-2">
+        <a class="btn btn-sm btn-outline-secondary flex-grow-1"
+           href="{{ url_for('spools.edit_spool', spool_id=spool.id) }}">
+          <i class="bi bi-pencil me-1"></i>Bearbeiten
+        </a>
+        <a class="btn btn-sm btn-outline-primary flex-grow-1"
+           href="{{ url_for('spools.spool_detail', spool_id=spool.id) }}">
+          <i class="bi bi-eye me-1"></i>Details
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-layers display-3 d-block mb-3"></i>
+  {% if search or material_filter or location_filter %}
+    <p class="fs-5">Keine Spulen gefunden. <a href="{{ url_for('spools.index') }}">Filter zurücksetzen</a></p>
+  {% else %}
+    <p class="fs-5">Noch keine Spulen angelegt.</p>
+    <a class="btn btn-primary" href="{{ url_for('spools.new_spool') }}">
+      <i class="bi bi-plus-lg me-1"></i>Erste Spule anlegen
+    </a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
